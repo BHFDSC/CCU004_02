@@ -1,0 +1,182 @@
+#clear environment
+rm(list = ls())
+
+# set target folder
+setwd("/mnt/efs/a.handy/dars_nic_391419_j3w9t_collab/CCU004_02")
+
+#Load packages
+library(odbc)
+library(dplyr)
+library(data.table)
+library(DBI)
+
+today_date = format(Sys.time(), "%d_%m_%Y")
+
+# connect to databricks instance
+con = dbConnect( odbc::odbc(), "Databricks", timeout = 60, 
+                 PWD=rstudioapi::askForPassword("Please enter your Databricks personal access token"))
+
+outcomes = c("stroke", "covid_death")
+input_run_date = "021121"
+
+for (outcome in outcomes){
+  query = paste('SELECT * FROM dars_nic_391419_j3w9t_collab.ccu004_2_cohort_', outcome, '_seq_len_all_', input_run_date, sep="")
+  data = dbGetQuery(con,query)
+  
+  #create function to generate clean labels for n and pct columns
+  clean_table_text = function(col_n, col_pct) {
+    clean_var = paste(col_n, " (", round(col_pct,3)*100, "%)", sep="")
+    return(clean_var)
+  }
+  
+  #create function to generate clean labels for mean and sd columns
+  clean_cont_text = function(col_mean, col_sd) {
+    clean_var = paste(round(col_mean, 1), " (+/- ", round(col_sd,1), ")", sep="")
+    return(clean_var)
+  }
+  
+  #age at cohort start
+  mean_age = mean(data$age_at_cohort_start)
+  age_sd = sd(data$age_at_cohort_start)
+  age_clean = clean_cont_text(mean_age, age_sd)
+  
+  #age at AF diagnosis
+  mean_age_af = mean(data$age_at_af_diagnosis)
+  age_af_sd = sd(data$age_at_af_diagnosis)
+  age_af_clean = clean_cont_text(mean_age_af, age_af_sd)
+  
+  #sex
+  female_n = sum(data$female)
+  female_pct = female_n / nrow(data)
+  female_clean = clean_table_text(female_n, female_pct)
+  
+  #ethnicity categories
+  
+  #add ethnicity flags
+  data = mutate(data, eth_white = if_else(ethnicity == "White",1,0), 
+                eth_asian = if_else(ethnicity == "Asian or Asian British",1,0), 
+                eth_black = if_else(ethnicity == "Black or Black British",1,0),
+                eth_mixed = if_else(ethnicity == "Mixed",1,0),
+                eth_other = if_else(ethnicity == "Other Ethnic Groups",1,0)
+  )
+  
+  eth_white_n = sum(data$eth_white)
+  eth_white_pct = eth_white_n / nrow(data)
+  eth_white_clean = clean_table_text(eth_white_n, eth_white_pct)
+  
+  eth_asian_n = sum(data$eth_asian)
+  eth_asian_pct = eth_asian_n / nrow(data)
+  eth_asian_clean = clean_table_text(eth_asian_n, eth_asian_pct)
+  
+  eth_black_n = sum(data$eth_black)
+  eth_black_pct = eth_black_n / nrow(data)
+  eth_black_clean = clean_table_text(eth_black_n, eth_black_pct)
+  
+  eth_mixed_n = sum(data$eth_mixed)
+  eth_mixed_pct = eth_mixed_n / nrow(data)
+  eth_mixed_clean = clean_table_text(eth_mixed_n, eth_mixed_pct)
+  
+  eth_other_n = sum(data$eth_other)
+  eth_other_pct = eth_other_n / nrow(data)
+  eth_other_clean = clean_table_text(eth_other_n, eth_other_pct)
+  
+  #imd deciles
+  split_imd_scores = data %>% group_by(imd_decile) %>% summarise(n = n())
+  
+  imd_1_n = as.numeric(split_imd_scores[1,2])
+  imd_1_pct = as.numeric(imd_1_n / nrow(data))
+  imd_1_clean = clean_table_text(imd_1_n, imd_1_pct)
+  
+  imd_2_n = as.numeric(split_imd_scores[2,2])
+  imd_2_pct = as.numeric(imd_2_n / nrow(data))
+  imd_2_clean = clean_table_text(imd_2_n, imd_2_pct)
+  
+  imd_3_n = as.numeric(split_imd_scores[3,2])
+  imd_3_pct = as.numeric(imd_3_n / nrow(data))
+  imd_3_clean = clean_table_text(imd_3_n, imd_3_pct)
+  
+  imd_4_n = as.numeric(split_imd_scores[4,2])
+  imd_4_pct = as.numeric(imd_4_n / nrow(data))
+  imd_4_clean = clean_table_text(imd_4_n, imd_4_pct)
+  
+  imd_5_n = as.numeric(split_imd_scores[5,2])
+  imd_5_pct = as.numeric(imd_5_n / nrow(data))
+  imd_5_clean = clean_table_text(imd_5_n, imd_5_pct)
+  
+  imd_6_n = as.numeric(split_imd_scores[6,2])
+  imd_6_pct = as.numeric(imd_6_n / nrow(data))
+  imd_6_clean = clean_table_text(imd_6_n, imd_6_pct)
+  
+  imd_7_n = as.numeric(split_imd_scores[7,2])
+  imd_7_pct = as.numeric(imd_7_n / nrow(data))
+  imd_7_clean = clean_table_text(imd_7_n, imd_7_pct)
+  
+  imd_8_n = as.numeric(split_imd_scores[8,2])
+  imd_8_pct = as.numeric(imd_8_n / nrow(data))
+  imd_8_clean = clean_table_text(imd_8_n, imd_8_pct)
+  
+  imd_9_n = as.numeric(split_imd_scores[9,2])
+  imd_9_pct = as.numeric(imd_9_n / nrow(data))
+  imd_9_clean = clean_table_text(imd_9_n, imd_9_pct)
+  
+  imd_10_n = as.numeric(split_imd_scores[10,2])
+  imd_10_pct = as.numeric(imd_10_n / nrow(data))
+  imd_10_clean = clean_table_text(imd_10_n, imd_10_pct)
+  
+  #stroke
+  stroke_n = sum(data$stroke)
+  stroke_pct = stroke_n / nrow(data)
+  stroke_clean = clean_table_text(stroke_n, stroke_pct)
+  
+  #medical history length
+  mean_med_hist = mean(data$med_hist_len)
+  med_hist_sd = sd(data$med_hist_len)
+  med_hist_clean = clean_cont_text(mean_med_hist, med_hist_sd)
+  
+  #medical history length unique
+  mean_med_hist_uniq = mean(data$med_hist_uniq_len)
+  med_hist_uniq_sd = sd(data$med_hist_uniq_len)
+  med_hist_uniq_clean = clean_cont_text(mean_med_hist_uniq, med_hist_uniq_sd)
+  
+  #bmi
+  mean_bmi = mean(data$bmi_imp)
+  bmi_sd = sd(data$bmi_imp)
+  bmi_clean = clean_cont_text(mean_bmi, bmi_sd)
+  
+  #covid outcomes (TO-DO)
+  
+  summary_table = data.frame(age_at_cohort_start = age_clean, 
+                             age_at_first_af_diagnosis = age_af_clean,
+                             female = female_clean,
+                             eth_white = eth_white_clean,
+                             eth_asian = eth_asian_clean,
+                             eth_black = eth_black_clean,
+                             eth_mixed = eth_mixed_clean,
+                             eth_other = eth_other_clean,
+                             imd1 = imd_1_clean,
+                             imd2 = imd_2_clean,
+                             imd3 = imd_3_clean,
+                             imd4 = imd_4_clean,
+                             imd5 = imd_5_clean,
+                             imd6 = imd_6_clean,
+                             imd7 = imd_7_clean,
+                             imd8 = imd_8_clean,
+                             imd9 = imd_9_clean,
+                             imd10 = imd_10_clean,
+                             stroke = stroke_clean,
+                             med_hist_len = med_hist_clean, 
+                             med_hist_uniq_len = med_hist_uniq_clean,
+                             bmi = bmi_clean
+  )
+  
+  summary_table_t = t(summary_table)
+  print(summary_table_t)
+  
+  summary_table_filename = paste("cohort_summary_table_",outcome,"_",today_date, ".csv", sep="")
+  write.csv(summary_table_t, summary_table_filename, row.names=T, quote=F)
+  
+}
+
+
+
+
