@@ -11,6 +11,19 @@ We compare the performance of our DL and ML pipeline directly against the CHA2DS
 The code for our pipeline is generalisable, opensource and designed to provide a proof-of-concept framework that other researchers and developers can build on.
 
 
+## How to cite this work
+> Citation details to follow
+
+## Code
+
+Click [here](https://github.com/BHFDSC/CCU004_02/tree/main/code) to view the analysis code.
+
+Phenotyping algorithms and codelists are available [here](https://github.com/BHFDSC/CCU004_02/tree/main/phenotypes)
+
 ## Project approval
 
-This is a subproject of the project approved by the CVD-COVID-UK / COVID-IMPACT Approvals & Oversight Board (Project ID: CCU004, subproject ID CCU004_02).
+This is a sub-project of [project CCU004](https://github.com/BHFDSC/CCU004) approved by the CVD-COVID-UK / COVID-IMPACT Approvals & Oversight Board (sub-project: CCU004_02).
+
+## License
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this software except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0. Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
