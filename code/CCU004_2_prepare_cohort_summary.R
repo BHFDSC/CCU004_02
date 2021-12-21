@@ -11,13 +11,14 @@ library(data.table)
 library(DBI)
 
 today_date = format(Sys.time(), "%d_%m_%Y")
+#today_date = "30_11_2021"
 
 # connect to databricks instance
 con = dbConnect( odbc::odbc(), "Databricks", timeout = 60, 
                  PWD=rstudioapi::askForPassword("Please enter your Databricks personal access token"))
 
 outcomes = c("stroke", "covid_death")
-input_run_date = "021121"
+input_run_date = "301121"
 
 for (outcome in outcomes){
   query = paste('SELECT * FROM dars_nic_391419_j3w9t_collab.ccu004_2_cohort_', outcome, '_seq_len_all_', input_run_date, sep="")
@@ -35,6 +36,9 @@ for (outcome in outcomes){
     return(clean_var)
   }
   
+  #individuals
+  n_individuals = nrow(data)
+  
   #age at cohort start
   mean_age = mean(data$age_at_cohort_start)
   age_sd = sd(data$age_at_cohort_start)
@@ -44,6 +48,12 @@ for (outcome in outcomes){
   mean_age_af = mean(data$age_at_af_diagnosis)
   age_af_sd = sd(data$age_at_af_diagnosis)
   age_af_clean = clean_cont_text(mean_age_af, age_af_sd)
+  
+  #follow-up time
+  data$af_yrs_since_af_diagnosis = data$af_months_since_diagnosis / 12
+  mean_follow_up = mean(data$af_yrs_since_af_diagnosis)
+  follow_up_sd = sd(data$af_yrs_since_af_diagnosis)
+  follow_up_clean = clean_cont_text(mean_follow_up, follow_up_sd)
   
   #sex
   female_n = sum(data$female)
@@ -80,54 +90,6 @@ for (outcome in outcomes){
   eth_other_pct = eth_other_n / nrow(data)
   eth_other_clean = clean_table_text(eth_other_n, eth_other_pct)
   
-  #imd deciles
-  split_imd_scores = data %>% group_by(imd_decile) %>% summarise(n = n())
-  
-  imd_1_n = as.numeric(split_imd_scores[1,2])
-  imd_1_pct = as.numeric(imd_1_n / nrow(data))
-  imd_1_clean = clean_table_text(imd_1_n, imd_1_pct)
-  
-  imd_2_n = as.numeric(split_imd_scores[2,2])
-  imd_2_pct = as.numeric(imd_2_n / nrow(data))
-  imd_2_clean = clean_table_text(imd_2_n, imd_2_pct)
-  
-  imd_3_n = as.numeric(split_imd_scores[3,2])
-  imd_3_pct = as.numeric(imd_3_n / nrow(data))
-  imd_3_clean = clean_table_text(imd_3_n, imd_3_pct)
-  
-  imd_4_n = as.numeric(split_imd_scores[4,2])
-  imd_4_pct = as.numeric(imd_4_n / nrow(data))
-  imd_4_clean = clean_table_text(imd_4_n, imd_4_pct)
-  
-  imd_5_n = as.numeric(split_imd_scores[5,2])
-  imd_5_pct = as.numeric(imd_5_n / nrow(data))
-  imd_5_clean = clean_table_text(imd_5_n, imd_5_pct)
-  
-  imd_6_n = as.numeric(split_imd_scores[6,2])
-  imd_6_pct = as.numeric(imd_6_n / nrow(data))
-  imd_6_clean = clean_table_text(imd_6_n, imd_6_pct)
-  
-  imd_7_n = as.numeric(split_imd_scores[7,2])
-  imd_7_pct = as.numeric(imd_7_n / nrow(data))
-  imd_7_clean = clean_table_text(imd_7_n, imd_7_pct)
-  
-  imd_8_n = as.numeric(split_imd_scores[8,2])
-  imd_8_pct = as.numeric(imd_8_n / nrow(data))
-  imd_8_clean = clean_table_text(imd_8_n, imd_8_pct)
-  
-  imd_9_n = as.numeric(split_imd_scores[9,2])
-  imd_9_pct = as.numeric(imd_9_n / nrow(data))
-  imd_9_clean = clean_table_text(imd_9_n, imd_9_pct)
-  
-  imd_10_n = as.numeric(split_imd_scores[10,2])
-  imd_10_pct = as.numeric(imd_10_n / nrow(data))
-  imd_10_clean = clean_table_text(imd_10_n, imd_10_pct)
-  
-  #stroke
-  stroke_n = sum(data$stroke)
-  stroke_pct = stroke_n / nrow(data)
-  stroke_clean = clean_table_text(stroke_n, stroke_pct)
-  
   #medical history length
   mean_med_hist = mean(data$med_hist_len)
   med_hist_sd = sd(data$med_hist_len)
@@ -138,35 +100,37 @@ for (outcome in outcomes){
   med_hist_uniq_sd = sd(data$med_hist_uniq_len)
   med_hist_uniq_clean = clean_cont_text(mean_med_hist_uniq, med_hist_uniq_sd)
   
-  #bmi
-  mean_bmi = mean(data$bmi_imp)
-  bmi_sd = sd(data$bmi_imp)
-  bmi_clean = clean_cont_text(mean_bmi, bmi_sd)
+  #stroke
+  stroke_n = sum(data$stroke)
+  stroke_pct = stroke_n / nrow(data)
+  stroke_clean = clean_table_text(stroke_n, stroke_pct)
   
-  #covid outcomes (TO-DO)
+  #covid event
+  covid_event_n = sum(data$covid_infection)
+  covid_event_pct = covid_event_n / nrow(data)
+  covid_event_clean = clean_table_text(covid_event_n, covid_event_pct)
   
-  summary_table = data.frame(age_at_cohort_start = age_clean, 
+  #covid death
+  covid_death_n = sum(data$covid_death)
+  covid_death_pct = covid_death_n / nrow(data)
+  covid_death_clean = clean_table_text(covid_death_n, covid_death_pct)
+
+  
+  summary_table = data.frame(individuals = n_individuals, 
+                             age_at_cohort_start = age_clean, 
                              age_at_first_af_diagnosis = age_af_clean,
+                             follow_up_time_yrs = follow_up_clean,
                              female = female_clean,
                              eth_white = eth_white_clean,
                              eth_asian = eth_asian_clean,
                              eth_black = eth_black_clean,
                              eth_mixed = eth_mixed_clean,
                              eth_other = eth_other_clean,
-                             imd1 = imd_1_clean,
-                             imd2 = imd_2_clean,
-                             imd3 = imd_3_clean,
-                             imd4 = imd_4_clean,
-                             imd5 = imd_5_clean,
-                             imd6 = imd_6_clean,
-                             imd7 = imd_7_clean,
-                             imd8 = imd_8_clean,
-                             imd9 = imd_9_clean,
-                             imd10 = imd_10_clean,
-                             stroke = stroke_clean,
                              med_hist_len = med_hist_clean, 
                              med_hist_uniq_len = med_hist_uniq_clean,
-                             bmi = bmi_clean
+                             stroke = stroke_clean,
+                             covid_event = covid_event_clean,
+                             covid_death = covid_death_clean
   )
   
   summary_table_t = t(summary_table)

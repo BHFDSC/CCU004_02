@@ -1,6 +1,14 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # add documentation..
+# MAGIC **Description** This notebook creates the test and train samples used in CCU004-2
+# MAGIC  
+# MAGIC **Project(s)** CCU004-2 - A nationwide deep learning pipeline to predict stroke and COVID-19 death in atrial fibrillation 
+# MAGIC  
+# MAGIC **Author(s)** Alex Handy
+# MAGIC 
+# MAGIC **Reviewer(s)** Chris Tomlinson, Hiu Yan (Samantha) Ip
+# MAGIC  
+# MAGIC **Date last updated** 20-12-2021
 
 # COMMAND ----------
 
@@ -8,13 +16,14 @@
 
 # COMMAND ----------
 
+#TARGET SCENARIOS
 outcomes = ["stroke", "covid_death"]
-max_seq_lens = [60, 100]
-sample_ratios = [1, 3, "pop"]
+max_seq_lens = [100]
+sample_ratios = [1]
 runs = [1,2,3]
 
-input_run_date = "021121"
-output_run_date = "021121"
+input_run_date = "301121"
+output_run_date = "301121"
 
 scenarios = len(outcomes) * len(max_seq_lens) * len(sample_ratios) * len(runs)
 
@@ -33,9 +42,9 @@ for outcome in outcomes:
   print("Cohort rows", len(cohort_df))
 
   #create the test data and save it
-  FRAC_TRAIN = 0.9
+  FRAC_TRAIN = 0.8
   TRAIN_SAMPLE_NUM = 10000
-  TEST_SAMPLE_NUM = 7500
+  TEST_SAMPLE_NUM = 10000
     
   for run in runs:
     print("Run: ", run)
@@ -47,6 +56,7 @@ for outcome in outcomes:
     cohort_test = cohort_df.drop(cohort_train.index)
     print("Length of test", len(cohort_test))
 
+    # Subsample test data to fit in memory
     cohort_test_sub = cohort_test.sample(n=TEST_SAMPLE_NUM, random_state=run)
     cohort_test_sub = cohort_test_sub.reset_index()
     print("Length of test sample", len(cohort_test_sub))

@@ -1,6 +1,14 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # add documentation..
+# MAGIC **Description** This notebook runs the model analysis pipeline for CCU004-2
+# MAGIC  
+# MAGIC **Project(s)** CCU004-2 - A nationwide deep learning pipeline to predict stroke and COVID-19 death in atrial fibrillation 
+# MAGIC  
+# MAGIC **Author(s)** Alex Handy
+# MAGIC 
+# MAGIC **Reviewer(s)** Chris Tomlinson, Hiu Yan (Samantha) Ip
+# MAGIC  
+# MAGIC **Date last updated** 20-12-2021
 
 # COMMAND ----------
 
@@ -10,22 +18,20 @@
 
 #set upfront parameters
 
+#TARGET SCENARIOS
 outcomes = ["stroke", "covid_death"]
-max_seq_lens = [60, 100]
-sample_ratios = [1, 3, "pop"]
+max_seq_lens = [100]
+sample_ratios = [1]
 runs = [1,2,3]
 
-# outcomes = ["stroke"]
-# max_seq_lens = [60, 100]
-# sample_ratios = [1]
-# runs = [1,2,3]
-
-input_run_date = "021121"
-output_run_date = "021121"
+input_run_date = "301121"
+output_run_date = "301121"
 
 scenarios = len(outcomes) * len(max_seq_lens) * len(sample_ratios) * len(runs)
 
 print(scenarios)
+
+SUB_GROUPS = ["female", "male", "lt_65", "gte_65", "white", "asian_or_asian_british", "black_or_black_british", "mixed", "other_ethnic_groups"]
 
 # COMMAND ----------
 
@@ -37,6 +43,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
@@ -53,6 +60,9 @@ from torch.utils.data import dataset
 from typing import Tuple
 import xgboost as xgb
 
+#to stop setting copy warning output - consider reviewing in refactoring
+pd.set_option('chained',None)
+
 
 ##MACHINE LEARNING METHODS
 
@@ -64,21 +74,41 @@ def create_ml_features(x, feature_list, codelist, target_field, outcome):
         else:
             entry[code] = 0
     
-    
     if outcome == "stroke":
         entry["age_at_af_diagnosis"] = x["age_at_af_diagnosis"]
     else:
         entry["age_at_cohort_start"] = x["age_at_cohort_start"]
-        entry["imd_decile"] = x["imd_decile"]
-        entry["bmi"] = x["bmi_imp"]
       
     entry["female"] = x["female"]
-    entry["white_eth"] = x["white_eth"]
+    entry["white"] = x["white"]
+    entry["asian_or_asian_british"] = x["asian_or_asian_british"]
+    entry["black_or_black_british"] = x["black_or_black_british"]
+    entry["mixed"] = x["mixed"]
+    entry["other_ethnic_groups"] = x["other_ethnic_groups"]
+    
     entry[outcome] = x[outcome]
 
     feature_list.append(entry)
     
-def evaluate_ml_models(models, x_train, x_val, y_train, y_val, cohort_test_sub_non_n, all_codes_non_n, num_static_features, outcome, summary_data):
+def calc_ml_metrics(prediction, target):
+    try:
+      tn, fp, fn, tp = confusion_matrix(target, prediction).ravel()
+      accuracy = (tp + tn) / (tp + tn + fp + fn)
+      auc = roc_auc_score(target, prediction)
+      sensitivity = tp / (tp + fn)
+      specificity = tn / (tn + fp)
+      precision = tp / (tp + fp)
+    except ValueError:
+      print("Predicting all one class")
+      accuracy = 0
+      auc =  0
+      sensitivity = 0
+      specificity = 0
+      precision = 0
+    
+    return accuracy, auc, sensitivity, specificity, precision
+    
+def evaluate_ml_models(models, x_train, x_val, y_train, y_val, cohort_test_sub_non_n, all_codes_non_n, num_static_features, outcome, summary_data, summary_data_sub, sub_groups):
   for i, model in enumerate(models):
     entry = {}
 
@@ -86,22 +116,19 @@ def evaluate_ml_models(models, x_train, x_val, y_train, y_val, cohort_test_sub_n
 
     pred = md.predict(x_val)
     
-    #hack for XGBboost
-    if i == 2:
-        model_name = "XG Boost"
-        pred = [ 1 if p >= 0.5 else 0 for p in pred ]
-    elif i == 1:
-        model_name = "Random Forest"
+    if isinstance(model,sklearn.linear_model._logistic.LogisticRegression):
+      model_name = "Logistic Regression"
+    elif isinstance(model,sklearn.ensemble._forest.RandomForestClassifier):
+      model_name = "Random Forest"
+    elif isinstance(model, xgb.XGBRegressor):
+      model_name = "XG Boost"
+      pred = [ 1 if p >= 0.5 else 0 for p in pred ]
     else:
-        model_name = "Logistic Regression"
+      print("Incorrect model type")    
+    
 
     print("Validation sample results")
-    tn, fp, fn, tp = confusion_matrix(y_val, pred).ravel()
-    accuracy = (tp + tn) / (tp + tn + fp + fn)
-    auc = roc_auc_score(y_val, pred)
-    sensitivity = tp / (tp + fn)
-    specificity = tn / (tn + fp)
-    precision = tp / (tp + fp)
+    accuracy, auc, sensitivity, specificity, precision = calc_ml_metrics(pred, y_val)
     
     print("Model:", model_name)
     
@@ -112,20 +139,15 @@ def evaluate_ml_models(models, x_train, x_val, y_train, y_val, cohort_test_sub_n
     print("Precision (val):", precision)
     
     
-    print("Test sample results")
+    print("Test sample results - whole group")
     pred_test = md.predict(cohort_test_sub_non_n.iloc[:, :(len(all_codes_non_n)+num_static_features)])
     y_test = cohort_test_sub_non_n[outcome]
     
-    #hack for XGBboost
-    if i == 2:
-        pred_test = [ 1 if p >= 0.5 else 0 for p in pred_test ]
-        
-    tn, fp, fn, tp = confusion_matrix(y_test, pred_test).ravel()
-    accuracy_test = (tp + tn) / (tp + tn + fp + fn)
-    auc_test = roc_auc_score(y_test, pred_test)
-    sensitivity_test = tp / (tp + fn)
-    specificity_test = tn / (tn + fp)
-    precision_test = tp / (tp + fp)
+
+    if isinstance(model, xgb.XGBRegressor):
+      pred_test = [ 1 if p >= 0.5 else 0 for p in pred_test ]
+    
+    accuracy_test, auc_test, sensitivity_test, specificity_test, precision_test = calc_ml_metrics(pred_test, y_test)
     
     entry["model"] = model_name
     entry["accuracy"] = accuracy_test
@@ -142,6 +164,43 @@ def evaluate_ml_models(models, x_train, x_val, y_train, y_val, cohort_test_sub_n
     print("Precision (test):", precision_test)
     
     summary_data.append(entry)
+    
+    print("Test sample results - sub groups")
+    entry_sub = {}
+    entry_sub["model"] = model_name
+    
+    if outcome == "stroke":
+      age_col = "age_at_af_diagnosis"
+    else:
+      age_col = "age_at_cohort_start"
+    
+    for sub_group in sub_groups:
+      if sub_group == "male":
+        sub_group_test_df = cohort_test_sub_non_n[cohort_test_sub_non_n["female"] == 0]
+      elif sub_group == "gte_65":
+        sub_group_test_df = cohort_test_sub_non_n[cohort_test_sub_non_n[age_col] >=65]
+      elif sub_group == "lt_65":
+        sub_group_test_df = cohort_test_sub_non_n[cohort_test_sub_non_n[age_col] <65]
+      else:
+        sub_group_test_df = cohort_test_sub_non_n[cohort_test_sub_non_n[sub_group] == 1]
+        
+      pred_test_sub = md.predict(sub_group_test_df.iloc[:, :(len(all_codes_non_n)+num_static_features)])
+      y_test_sub = sub_group_test_df[outcome]
+      
+
+      if isinstance(model, xgb.XGBRegressor):
+        pred_test_sub = [ 1 if p >= 0.5 else 0 for p in pred_test_sub ]
+      
+      accuracy_test_sub, auc_test_sub, sensitivity_test_sub, specificity_test_sub, precision_test_sub = calc_ml_metrics(pred_test_sub, y_test_sub)
+      
+      entry_sub[str("accuracy" + "_" + sub_group)] = accuracy_test_sub
+      entry_sub[str("auc" + "_" + sub_group)] = auc_test_sub
+      entry_sub[str("sensitivity" + "_" + sub_group)] = sensitivity_test_sub
+      entry_sub[str("specificity" + "_" + sub_group)] = specificity_test_sub
+      entry_sub[str("precision" + "_" + sub_group)] = precision_test_sub
+      
+    
+    summary_data_sub.append(entry_sub)
 
 
 ##DEEP LEARNING METHODS
@@ -161,7 +220,7 @@ def add_label(x, target_field):
   else:
     return "No " + target_field
 
-def create_dl_features(cohort_train_sub, code_to_ix_nn, TARGET_FIELD, STATIC_FEATURES, outcome, run):
+def create_dl_features(cohort_train_sub, cohort_test_sub, code_to_ix_nn, TARGET_FIELD, STATIC_FEATURES, outcome, run):
   #NOTE: ASSUMES SET PADDING IDX TO ZERO IN EMBEDDING LAYER
   seq_features_nn = cohort_train_sub.apply(lookup_embeddings, args=(code_to_ix_nn, TARGET_FIELD), axis=1)
   seq_features_nn_tn = [ torch.tensor(seq) for seq in seq_features_nn ]
@@ -177,7 +236,7 @@ def create_dl_features(cohort_train_sub, code_to_ix_nn, TARGET_FIELD, STATIC_FEA
 
   all_categories = list(cohort_train_sub[OUTCOME_CAT].unique())
   all_categories.sort()
-  #CHECK SORT SO LABELLING MAKES SENSE FOR OUTCOMES e.g. 0=No stroke, 1=stroke -> was a previous error here
+  #CHECK SORT SO LABELLING MAKES SENSE FOR OUTCOMES e.g. 0=No stroke, 1=stroke
   print("DL categories: ", all_categories)
   n_categories = len(all_categories)
   labels_nn = cohort_train_sub[OUTCOME_CAT].apply(lambda x: all_categories.index(x))
@@ -215,6 +274,39 @@ def create_dl_features(cohort_train_sub, code_to_ix_nn, TARGET_FIELD, STATIC_FEA
 
   return x_seq_train, x_seq_val, x_static_train, x_static_val, y_train, y_val, x_seq_test, x_static_test, y_test, all_categories, n_categories, OUTCOME_CAT
 
+def create_dl_sub_sample(cohort_test_sub, sub_group, code_to_ix_nn, TARGET_FIELD, STATIC_FEATURES, outcome):
+  if outcome == "stroke":
+    age_col = "age_at_af_diagnosis"
+  else:
+    age_col = "age_at_cohort_start"
+    
+  if sub_group == "male":
+    cohort_test_sub_sample_df = cohort_test_sub[cohort_test_sub["female"] == 0]
+  elif sub_group == "gte_65":
+    cohort_test_sub_sample_df = cohort_test_sub[cohort_test_sub[age_col] >=65]
+  elif sub_group == "lt_65":
+    cohort_test_sub_sample_df = cohort_test_sub[cohort_test_sub[age_col] <65]
+  else:
+    cohort_test_sub_sample_df = cohort_test_sub[cohort_test_sub[sub_group] == 1]
+  
+  seq_features_test_nn_sub = cohort_test_sub_sample_df.apply(lookup_embeddings, args=(code_to_ix_nn, TARGET_FIELD), axis=1)
+  seq_features_test_nn_tn_sub = [ torch.tensor(seq) for seq in seq_features_test_nn_sub ]
+  seq_features_test_nn_tn_pd_sub = pad_sequence(seq_features_test_nn_tn_sub, batch_first=True)
+  x_seq_test_sub = seq_features_test_nn_tn_pd_sub
+  
+  static_df_test_sub = cohort_test_sub_sample_df[STATIC_FEATURES]
+  static_features_test_nn_sub = torch.tensor([ row for row in static_df_test_sub.values ])
+  x_static_test_sub = static_features_test_nn_sub
+
+  OUTCOME_CAT = outcome + "_cat"
+  cohort_test_sub_sample_df[OUTCOME_CAT] = cohort_test_sub_sample_df.apply(add_label, args=(outcome,), axis=1)
+  labels_test_nn_sub = cohort_test_sub_sample_df[OUTCOME_CAT].apply(lambda x: all_categories.index(x))
+  labels_test_nn_tn_sub = torch.tensor(labels_test_nn_sub.values)
+  y_test_sub = labels_test_nn_tn_sub
+  
+  
+  return x_seq_test_sub, x_static_test_sub, y_test_sub
+
 def create_dl_batches(batch_size, val_batch_size, x_seq_train, x_static_train, y_train, x_seq_val, x_static_val, y_val):
   train_data_nn = torch.utils.data.TensorDataset(
            x_seq_train, x_static_train, 
@@ -246,7 +338,7 @@ def get_pred_label(output):
     category_i = top_i[0].item()
     return category_i
   
-def calc_metrics(prediction, target, all_categories):
+def calc_dl_metrics(prediction, target, all_categories):
     predictions = []
     targets = []
     
@@ -274,7 +366,7 @@ def calc_metrics(prediction, target, all_categories):
     
     return accuracy, auc, sensitivity, specificity, precision
   
-def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_len, all_categories, epochs, train_loader_nn, val_batch_size, val_loader_nn, x_seq_test, x_static_test, y_test):
+def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_len, all_categories, epochs, train_loader_nn, val_batch_size, val_loader_nn, x_seq_test, x_static_test, y_test, cohort_test_sub, sub_groups, code_to_ix_nn, TARGET_FIELD, STATIC_FEATURES, outcome, summary_data_sub):
   losses_train = []
   accs_train = []
   aucs_train = []
@@ -293,6 +385,8 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
   sens_test = []
   specs_test = []
   precs_test = []
+  
+  sub_group_res = []
 
   net_start = time.time()
   print(net.model_name, " started ", datetime.fromtimestamp(net_start))
@@ -316,6 +410,8 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
       epoch_sen_val = 0
       epoch_spec_val = 0
       epoch_prec_val = 0
+      
+      epoch_sub_group_res = {}
       
       if net.model_name == "LSTM":
         #initialize hidden layers
@@ -351,7 +447,7 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
           loss = criterion(y_batch_pred, y_batch)
 
           #calculate evaluation metrics
-          accuracy_train, auc_train, sensitivity_train, specificity_train, precision_train = calc_metrics(y_batch_pred, y_batch, all_categories)
+          accuracy_train, auc_train, sensitivity_train, specificity_train, precision_train = calc_dl_metrics(y_batch_pred, y_batch, all_categories)
 
           #compute the gradient
           loss.backward()
@@ -367,9 +463,10 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
           epoch_prec_train += precision_train
 
 
-      #validation batches
+      #validation and test
       net.eval()
       with torch.no_grad():
+          #validation
           if net.model_name == "LSTM":
             h_val = net.init_hidden(val_batch_size)
           for batch_val_index, batch_val in enumerate(val_loader_nn):
@@ -388,7 +485,7 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
               else:
                 print("Error, model type not available")
                             
-              accuracy_val, auc_val, sensitivity_val, specificity_val, precision_val = calc_metrics(y_batch_pred_val, y_batch_val, all_categories)
+              accuracy_val, auc_val, sensitivity_val, specificity_val, precision_val = calc_dl_metrics(y_batch_pred_val, y_batch_val, all_categories)
 
               epoch_acc_val += accuracy_val
               epoch_auc_val += auc_val
@@ -396,7 +493,7 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
               epoch_spec_val += specificity_val
               epoch_prec_val += precision_val
           
-          #predict the output
+          #test the output - whole group
           if net.model_name == "LSTM":
             #test batch prep lstm
             h_test = net.init_hidden(len(x_seq_test))
@@ -409,7 +506,32 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
           else:
             print("Error, model type not available")
         
-          accuracy_test, auc_test, sensitivity_test, specificity_test, precision_test = calc_metrics(y_pred_test, y_test, all_categories)
+          accuracy_test, auc_test, sensitivity_test, specificity_test, precision_test = calc_dl_metrics(y_pred_test, y_test, all_categories)
+          
+          #test the output - sub groups
+          epoch_sub_group_res["model"] = net.model_name
+          for sub_group in sub_groups:
+            x_seq_test_sub, x_static_test_sub, y_test_sub = create_dl_sub_sample(cohort_test_sub, sub_group, code_to_ix_nn, TARGET_FIELD, STATIC_FEATURES, outcome)
+            if net.model_name == "LSTM":
+              #test batch prep lstm
+              h_test_sub = net.init_hidden(len(x_seq_test_sub))
+              h_test_sub = tuple([l_t.data for l_t in h_test_sub])
+              y_pred_test_sub = net(x_seq_test_sub, x_static_test_sub, h_test_sub)
+            elif net.model_name == "Transformer":
+              #test batch prep transformer
+              #NOTE: in sub groups, there is greater possibility that sample does not have an individual with max seq len (e.g. black british error) so mask with size of longest length
+              mask_len = x_seq_test_sub.size()[1]
+              src_mask_test_sub = generate_square_subsequent_mask(mask_len)
+              y_pred_test_sub = net(x_seq_test_sub, x_static_test_sub, src_mask_test_sub)
+            else:
+              print("Error, model type not available")
+              
+            accuracy_test_sub, auc_test_sub, sensitivity_test_sub, specificity_test_sub, precision_test_sub = calc_dl_metrics(y_pred_test_sub, y_test_sub, all_categories) 
+            epoch_sub_group_res[str("accuracy" + "_" + sub_group)] = accuracy_test_sub
+            epoch_sub_group_res[str("auc" + "_" + sub_group)] = auc_test_sub
+            epoch_sub_group_res[str("sensitivity" + "_" + sub_group)] = sensitivity_test_sub
+            epoch_sub_group_res[str("specificity" + "_" + sub_group)] = specificity_test_sub
+            epoch_sub_group_res[str("precision" + "_" + sub_group)] = precision_test_sub
 
       #accumulate metrics at epoch level (for charts and model reporting)
 
@@ -446,6 +568,8 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
       sens_test.append(sensitivity_test)
       specs_test.append(specificity_test)
       precs_test.append(precision_test)
+      
+      sub_group_res.append(epoch_sub_group_res)
 
       epoch_end = time.time()
 
@@ -463,14 +587,6 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
   net_end = time.time()
   print("Training completed in %s minutes" % ( round(net_end - net_start,2) / 60) )
   
-  #NOTE: Doesn't seem to work in loop
-#   print("Graphically display the results")
-#   plt.plot(aucs_train)
-#   plt.plot(aucs_val)
-#   plt.plot(aucs_test)
-
-#   plt.show()
-  
   print("Get the summary results")
   max_auc_val = max(aucs_val)
   print("Max auc val", max_auc_val)
@@ -486,6 +602,9 @@ def run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_le
   entry["specificity"] = specs_test[max_auc_epoch_idx]
   entry["precision"] = precs_test[max_auc_epoch_idx]
   summary_data.append(entry)
+  
+  summary_data_sub_entry = sub_group_res[max_auc_epoch_idx]
+  summary_data_sub.append(summary_data_sub_entry)
   
 ##CHADSVASC
 
@@ -517,7 +636,7 @@ def create_features_chads(x, feature_list, codelists, outcome):
       else:
           comp_name = "hypertension"
       
-      #NOTE: this field is different than ML and DL models which use most recent 60 and 100 codes as did not want to artificially disadvantage chadsvasc that does not use high dimensional sequence data
+      #NOTE: this field is different than ML and DL models which use most recent 100 codes as did not want to artificially disadvantage chadsvasc that does not use high dimensional sequence data
       for code in x["med_hist_uniq"]:
           if code in codelist:
               entry[comp_name] = 1
@@ -532,6 +651,13 @@ def create_features_chads(x, feature_list, codelists, outcome):
       entry["age"] = x["age_at_cohort_start"]
 
   entry["female"] = x["female"]
+    
+  entry["white"] = x["white"]
+  entry["asian_or_asian_british"] = x["asian_or_asian_british"]
+  entry["black_or_black_british"] = x["black_or_black_british"]
+  entry["mixed"] = x["mixed"]
+  entry["other_ethnic_groups"] = x["other_ethnic_groups"]
+
   entry[outcome] = x[outcome]
 
   feature_list.append(entry)
@@ -543,25 +669,19 @@ def create_chads_score(x):
       age = 1
   else:
       age = 0
-
-  if x["female"] == 1:
-      male = 0
-  else:
-      male = 1
+  
       
-  score = (x["vascular_disease"] + x["congestive_heart_failure"] + x["diabetes"] + x["hypertension"] + age + male)
+  score = (x["vascular_disease"] + x["congestive_heart_failure"] + x["diabetes"] + x["hypertension"] + age + x["female"])
   
   return score
 
-def run_chads_evaluation(cohort_test_sub_chads, outcome, summary_data):
+
+def run_chads_evaluation(cohort_test_sub_chads, outcome, summary_data, summary_data_sub, sub_groups):
+  #whole group metrics
   y = cohort_test_sub_chads[outcome].values
   pred = cohort_test_sub_chads["pred_chads2"].values
-  tn, fp, fn, tp = confusion_matrix(y, pred).ravel()
-  accuracy = (tp + tn) / (tp + tn + fp + fn)
-  auc = roc_auc_score(y, pred)
-  sensitivity = tp / (tp + fn)
-  specificity = tn / (tn + fp)
-  precision = tp / (tp + fp)
+  
+  accuracy, auc, sensitivity, specificity, precision = calc_ml_metrics(pred, y)
 
   print("Accuracy: ", accuracy)
   print("Auc : ", auc)
@@ -578,6 +698,36 @@ def run_chads_evaluation(cohort_test_sub_chads, outcome, summary_data):
   entry["specificity"] = specificity
   entry["precision"] = precision
   summary_data.append(entry)
+  
+  #sub group metrics
+  entry_sub = {}
+  entry_sub["model"] = "CHA2DS2-VASc >=2"
+  
+  #NOTE: different age interface for chads as the age parameter is already adjusted for stroke vs covid death in chads features (opportunity for tidying)
+  for sub_group in sub_groups:
+    if sub_group == "male":
+      sub_group_test_df = cohort_test_sub_chads[cohort_test_sub_chads["female"] == 0]
+    elif sub_group == "gte_65":
+      sub_group_test_df = cohort_test_sub_chads[cohort_test_sub_chads["age"] >=65]
+    elif sub_group == "lt_65":
+      sub_group_test_df = cohort_test_sub_chads[cohort_test_sub_chads["age"] <65]
+    else:
+      sub_group_test_df = cohort_test_sub_chads[cohort_test_sub_chads[sub_group] == 1]
+  
+    y_test_sub = sub_group_test_df[outcome].values
+    pred_test_sub = sub_group_test_df["pred_chads2"].values
+  
+    accuracy_test_sub, auc_test_sub, sensitivity_test_sub, specificity_test_sub, precision_test_sub = calc_ml_metrics(pred_test_sub, y_test_sub)
+  
+    entry_sub[str("accuracy" + "_" + sub_group)] = accuracy_test_sub
+    entry_sub[str("auc" + "_" + sub_group)] = auc_test_sub
+    entry_sub[str("sensitivity" + "_" + sub_group)] = sensitivity_test_sub
+    entry_sub[str("specificity" + "_" + sub_group)] = specificity_test_sub
+    entry_sub[str("precision" + "_" + sub_group)] = precision_test_sub
+      
+    
+  summary_data_sub.append(entry_sub)
+  
 
 # COMMAND ----------
 
@@ -693,10 +843,10 @@ for outcome in outcomes:
   print("Outcome: ", outcome)
   
   #define static features
-  if outcome == "covid_death":
-    STATIC_FEATURES = ["age_at_cohort_start", "female", "white_eth", "imd_decile", "bmi_imp"]
+  if outcome == "stroke":
+    STATIC_FEATURES = ["age_at_af_diagnosis", "female", "white", "asian_or_asian_british", "black_or_black_british", "mixed", "other_ethnic_groups"]
   else:
-    STATIC_FEATURES = ["age_at_af_diagnosis", "female", "white_eth"]
+    STATIC_FEATURES = ["age_at_cohort_start", "female", "white", "asian_or_asian_british", "black_or_black_british", "mixed", "other_ethnic_groups"]
     
   NUM_STATIC_FEATURES = len(STATIC_FEATURES)
   print("Number of static features", NUM_STATIC_FEATURES)
@@ -727,6 +877,7 @@ for outcome in outcomes:
         #setup summary data for each scenario
         print("Setup summary data for ", outcome, " and run ", run, " and sample ratio ", sample_ratio, "and max seq len ", max_seq_len)
         summary_data = []
+        summary_data_sub = []
         
         #define max seq len field 
         if max_seq_len == 60:
@@ -752,7 +903,6 @@ for outcome in outcomes:
         all_codes_nn = all_codes_non_n
         print("Codelist vocab length neural nets", len(all_codes_nn))
         code_to_ix_nn = {code: i+1 for i, code in enumerate(all_codes_nn)}
-        #print("Code to index", code_to_ix_nn)
         
         #create features for ml models
         print("Create ml features")
@@ -774,7 +924,7 @@ for outcome in outcomes:
         #train, evaluate and report on ml models
         ml_models = [LogisticRegression(max_iter=3000, random_state=run), RandomForestClassifier(random_state=run),xgb.XGBRegressor(objective="binary:logistic", random_state=run)]
         x_train, x_val, y_train, y_val = train_test_split(cohort_train_sub_non_n.iloc[:, :(len(all_codes_non_n)+NUM_STATIC_FEATURES)], cohort_train_sub_non_n[outcome], test_size=0.20, random_state=run)
-        evaluate_ml_models(ml_models, x_train, x_val, y_train, y_val, cohort_test_sub_non_n, all_codes_non_n, NUM_STATIC_FEATURES, outcome, summary_data)
+        evaluate_ml_models(ml_models, x_train, x_val, y_train, y_val, cohort_test_sub_non_n, all_codes_non_n, NUM_STATIC_FEATURES, outcome, summary_data, summary_data_sub, SUB_GROUPS)
         
         #NOTE: aim to free up memory here
         cohort_train_sub_non_n = None
@@ -783,6 +933,9 @@ for outcome in outcomes:
         summary_data_df = pd.DataFrame(summary_data)
         print("Summary data after ML models for ", outcome, " and run ", run, " and sample ratio ", sample_ratio, " and max seq len ", max_seq_len, "\n", summary_data_df)
         
+        summary_data_sub_df = pd.DataFrame(summary_data_sub)
+        print("Summary data for sub groups after ML models for ", outcome, " and run ", run, " and sample ratio ", sample_ratio, " and max seq len ", max_seq_len, "\n", summary_data_sub_df)
+        
         end_ml = time.time()
         print("ML completed in %s minutes" % ( round(end_ml - start_ml,2) / 60) )
         
@@ -790,7 +943,7 @@ for outcome in outcomes:
         print("Create dl features")
         start_dl = time.time()
       
-        x_seq_train, x_seq_val, x_static_train, x_static_val, y_train, y_val, x_seq_test, x_static_test, y_test, all_categories, n_categories, OUTCOME_CAT = create_dl_features(cohort_train_sub, code_to_ix_nn, TARGET_FIELD, STATIC_FEATURES, outcome, run)
+        x_seq_train, x_seq_val, x_static_train, x_static_val, y_train, y_val, x_seq_test, x_static_test, y_test, all_categories, n_categories, OUTCOME_CAT = create_dl_features(cohort_train_sub, cohort_test_sub, code_to_ix_nn, TARGET_FIELD, STATIC_FEATURES, outcome, run)
         
         #train, evaluate and report on dl models 
         batch_size = 64
@@ -822,16 +975,20 @@ for outcome in outcomes:
         lstm = MyLSTM(output_size, vocab_size, embedding_dim, hidden_dim, n_layers, static_features_n, fc1_dim, dropout)
         transformer = MyTransformer(output_size, vocab_size, embedding_dim, hidden_dim, n_head, n_layers, static_features_n, static_dim, combo_dim, fc_int_dim, dropout)
         nets = [lstm, transformer]
+        #nets = [transformer]
         for net in nets:
           print(net.model_name)
           opt = optim.Adam(net.parameters(), lr=learning_rate)
           criterion = nn.NLLLoss()
-          
-          run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_len, all_categories, epochs, train_loader_nn, val_batch_size, val_loader_nn, x_seq_test, x_static_test, y_test)
+          run_dl_training_and_evaluation(net, opt, criterion, summary_data, max_seq_len, all_categories, epochs, train_loader_nn, val_batch_size, val_loader_nn, x_seq_test, x_static_test, y_test, cohort_test_sub, SUB_GROUPS, code_to_ix_nn, TARGET_FIELD, STATIC_FEATURES, outcome, summary_data_sub)
 
 
         summary_data_df = pd.DataFrame(summary_data)
         print("Summary data after DL models for ", outcome, " and run ", run, " and sample ratio ", sample_ratio, " and max seq len ", max_seq_len, "\n", summary_data_df)
+        
+        summary_data_sub_df = pd.DataFrame(summary_data_sub)
+        print("Summary data for sub groups after DL models for ", outcome, " and run ", run, " and sample ratio ", sample_ratio, " and max seq len ", max_seq_len, "\n", summary_data_sub_df)
+        
         end_dl = time.time()
         print("DL completed in %s minutes" % ( round(end_dl - start_dl,2) / 60) )
         
@@ -856,15 +1013,22 @@ for outcome in outcomes:
         cohort_test_sub_chads["pred_chads2"] = np.where(cohort_test_sub_chads["chads_score"] >=2, 1, 0)
         
         #evaluate and report on chadsvasc
-        run_chads_evaluation(cohort_test_sub_chads, outcome, summary_data)
+        run_chads_evaluation(cohort_test_sub_chads, outcome, summary_data, summary_data_sub, SUB_GROUPS)
         
-        #save summary table
+        #save summary tables
         summary_data_df = pd.DataFrame(summary_data)
         print("Final summary data table for ", outcome, " and run ", run, " and sample ratio ", sample_ratio, " and max seq len ", max_seq_len, "\n", summary_data_df)
+        
+        summary_data_sub_df = pd.DataFrame(summary_data_sub)
+        print("Final summary data table for sub groups for ", outcome, " and run ", run, " and sample ratio ", sample_ratio, " and max seq len ", max_seq_len, "\n", summary_data_sub_df)
         
         summary_data_py = spark.createDataFrame(summary_data_df)
         summary_data_py_table_name = "ccu004_2_cohort_" + outcome + "_seq_len_" + str(max_seq_len) + "_sr_" + str(sample_ratio) + "_run_" + str(run) + "_summary_data_" + output_run_date
         create_table_pyspark(summary_data_py, summary_data_py_table_name)
+        
+        summary_data_sub_py = spark.createDataFrame(summary_data_sub_df)
+        summary_data_sub_py_table_name = "ccu004_2_cohort_" + outcome + "_seq_len_" + str(max_seq_len) + "_sr_" + str(sample_ratio) + "_run_" + str(run) + "_summary_data_sub_" + output_run_date
+        create_table_pyspark(summary_data_sub_py, summary_data_sub_py_table_name)
   
 end = time.time()
 print("Script completed in %s minutes" % ( round(end - start,2) / 60) )

@@ -1,13 +1,19 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # add documentation..
+# MAGIC **Description** This notebook compiles a set of helper functions and parameters for use across CCU004-2
+# MAGIC  
+# MAGIC **Project(s)** CCU004-2 - A nationwide deep learning pipeline to predict stroke and COVID-19 death in atrial fibrillation 
+# MAGIC  
+# MAGIC **Author(s)** Alex Handy
+# MAGIC 
+# MAGIC **Reviewer(s)** Chris Tomlinson, Hiu Yan (Samantha) Ip
+# MAGIC  
+# MAGIC **Date last updated** 20-12-2021
 
 # COMMAND ----------
 
 import pyspark.sql.functions as f
 from functools import reduce
-
-#helper function to create table (if stored as SQL global view) -> consider abstracting into a helper functions notebook
 
 def create_table(table_name:str, database_name:str='dars_nic_391419_j3w9t_collab', select_sql_script:str=None, if_not_exists=True) -> None:
   """Will save to table from a global_temp view of the same name as the supplied table name (if no SQL script is supplied)

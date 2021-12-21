@@ -1,6 +1,14 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # add documentation..
+# MAGIC **Description** This notebook applies the remaining cohort inclusion criteria and pre-processing for the cohort used in CCU004-2
+# MAGIC  
+# MAGIC **Project(s)** CCU004-2 - A nationwide deep learning pipeline to predict stroke and COVID-19 death in atrial fibrillation 
+# MAGIC  
+# MAGIC **Author(s)** Alex Handy
+# MAGIC 
+# MAGIC **Reviewer(s)** Chris Tomlinson, Hiu Yan (Samantha) Ip
+# MAGIC  
+# MAGIC **Date last updated** 20-12-2021
 
 # COMMAND ----------
 
@@ -26,7 +34,7 @@ def calc_af_months_since_diagnosis(x):
   end_date = pd.to_datetime("050121")
   return ((end_date.year - x["af_first_diagnosis_dt"].year) * 12) + (end_date.month - x["af_first_diagnosis_dt"].month)
 
-def correct_stroke_code(x):
+def add_binary_stroke_variable(x):
   if pd.isna(x["stroke_first_diagnosis_dt"]):
     return 0
   else:
@@ -58,16 +66,10 @@ def female_flag(x):
       return 1
   else:
       return 0
-    
-def sex_name_flag(x):
-    if x == "2":
-        return "Female"
-    else:
-        return "Male"
 
-#set ethnicity variable
-def set_white_eth(x):
-    if x["ethnicity"] == "White":
+#set ethnicity variables
+def set_eth_label(x, eth_label):
+    if x["ethnicity"] == eth_label:
         return 1
     else:
         return 0
@@ -88,22 +90,17 @@ def set_target_codes(x, target_field, max_len):
     return target_codes
   else:
     return x[target_field]
-  
-#append static data for neural networks
-def add_static_data(x):
-    output = x["med_hist_target"] + [x["date_of_birth"]] + [x["sex_name"]] + [x["ethnicity"]] + [x["region_name"]] + [x["imd_decile"]]
-    return output
 
 # COMMAND ----------
 
 #set parameters
-run_date = "021121"
+run_date = "301121"
 
 # COMMAND ----------
 
 #load cohort data
 
-cohort_data_table = "dars_nic_391419_j3w9t_collab.ccu004_2_cohort_all_021121"
+cohort_data_table = "dars_nic_391419_j3w9t_collab.ccu004_2_cohort_all_301121"
 cohort_py = spark.table(cohort_data_table)
 
 # COMMAND ----------
@@ -121,10 +118,9 @@ stroke_cohort_py = cohort_py.filter(cohort_py["date"] < cohort_py["af_first_diag
 # COMMAND ----------
 
 #create table with list of medical codes for each individual and accompanying data
-
 from pyspark.sql.functions import countDistinct, col
 
-stroke_events = stroke_cohort_py.groupby("NHS_NUMBER_DEID").agg(F.sort_array(F.collect_list(F.struct("date", "code"))).alias("collected_list"),F.max("stroke_hasbled"), F.max("stroke_first_diagnosis"), F.max("date_of_birth"), F.max("date_of_death"), F.max("age_at_cohort_start"), F.max("sex"), F.max("ethnicity"), F.max("region_name"), F.max("imd_decile"), F.max("bmi"), F.max("af_first_diagnosis"), F.max("covid_infection"), F.max("covid_hospitalisation"), F.max("covid_death")).select("*").withColumn("sorted_list",col("collected_list.code")).withColumnRenamed("max(stroke_hasbled)", "stroke").withColumnRenamed("max(stroke_first_diagnosis)", "stroke_first_diagnosis").withColumnRenamed("max(date_of_birth)", "date_of_birth").withColumnRenamed("max(date_of_death)", "date_of_death").withColumnRenamed("max(age_at_cohort_start)", "age_at_cohort_start").withColumnRenamed("max(sex)", "sex").withColumnRenamed("max(ethnicity)", "ethnicity").withColumnRenamed("max(region_name)", "region_name").withColumnRenamed("max(imd_decile)", "imd_decile").withColumnRenamed("max(bmi)", "bmi").withColumnRenamed("max(af_first_diagnosis)", "af_first_diagnosis").withColumnRenamed("max(covid_infection)", "covid_infection").withColumnRenamed("max(covid_hospitalisation)", "covid_hospitalisation").withColumnRenamed("max(covid_death)", "covid_death").withColumnRenamed("sorted_list", "med_hist").drop("collected_list")
+stroke_events = stroke_cohort_py.groupby("NHS_NUMBER_DEID").agg(F.sort_array(F.collect_list(F.struct("date", "code"))).alias("collected_list"), F.max("is_stroke_first_diagnosis"), F.max("date_of_birth"), F.max("date_of_death"), F.max("age_at_cohort_start"), F.max("sex"), F.max("ethnicity"), F.max("region_name"), F.max("imd_decile"), F.max("bmi"), F.max("af_first_diagnosis"), F.max("covid_infection"), F.max("covid_hospitalisation"), F.max("covid_death")).select("*").withColumn("sorted_list",col("collected_list.code")).withColumnRenamed("max(is_stroke_first_diagnosis)", "stroke_first_diagnosis").withColumnRenamed("max(date_of_birth)", "date_of_birth").withColumnRenamed("max(date_of_death)", "date_of_death").withColumnRenamed("max(age_at_cohort_start)", "age_at_cohort_start").withColumnRenamed("max(sex)", "sex").withColumnRenamed("max(ethnicity)", "ethnicity").withColumnRenamed("max(region_name)", "region_name").withColumnRenamed("max(imd_decile)", "imd_decile").withColumnRenamed("max(bmi)", "bmi").withColumnRenamed("max(af_first_diagnosis)", "af_first_diagnosis").withColumnRenamed("max(covid_infection)", "covid_infection").withColumnRenamed("max(covid_hospitalisation)", "covid_hospitalisation").withColumnRenamed("max(covid_death)", "covid_death").withColumnRenamed("sorted_list", "med_hist").drop("collected_list")
 
 # COMMAND ----------
 
@@ -144,8 +140,8 @@ stroke_cohort_df["stroke_first_diagnosis_dt"] = stroke_cohort_df["stroke_first_d
 
 # COMMAND ----------
 
-#convert NaN to 0 in stroke and include strokes after Jan 1st 2020
-stroke_cohort_df["stroke"] = stroke_cohort_df.apply(correct_stroke_code, axis=1)
+#create binary indicator for stroke
+stroke_cohort_df["stroke"] = stroke_cohort_df.apply(add_binary_stroke_variable, axis=1)
 
 # COMMAND ----------
 
@@ -155,13 +151,13 @@ stroke_cohort_df["af_to_stroke_months"].describe()
 
 # COMMAND ----------
 
-#calculate months between af diagnosis and end of study
+#calculate months between af diagnosis and end of study -> median follow-up time
 stroke_cohort_df["af_months_since_diagnosis"] = stroke_cohort_df.apply(calc_af_months_since_diagnosis, axis=1)
 stroke_cohort_df["af_months_since_diagnosis"].describe()
 
 # COMMAND ----------
 
-#remove individuals with a stroke diagnosis less than 2 months after af diagnosis (to mitigate impact of delayed coding issues) - NOT APPLIED TO COVID COHORT - WILL HAVE TO NOTE DISPARITY
+#remove individuals with a stroke diagnosis less than 2 months after af diagnosis (to mitigate impact of delayed coding issues)
 print("Length of cohort before filter: ", len(stroke_cohort_df))
 stroke_cohort_df = stroke_cohort_df[stroke_cohort_df.apply(remove_short_term_stroke, axis=1)]
 print("Length of cohort post filter: ", len(stroke_cohort_df))
@@ -216,14 +212,15 @@ stroke_cohort_df["covid_death"].mean()
 
 #process gender and ethnicity variables
 stroke_cohort_df["female"] = stroke_cohort_df["sex"].apply(female_flag)
-stroke_cohort_df["sex_name"] = stroke_cohort_df["sex"].apply(sex_name_flag)
-stroke_cohort_df["white_eth"] = stroke_cohort_df.apply(set_white_eth, axis=1)
 
 # COMMAND ----------
 
-#replace Nan in bmi to median bmi
-stroke_cohort_df["bmi_imp"] = stroke_cohort_df["bmi"].fillna(stroke_cohort_df["bmi"].median())
-stroke_cohort_df["bmi_imp"] = stroke_cohort_df["bmi_imp"].astype(float)
+#set binary variables for ethnicity
+eth_labels = ["White", "Asian or Asian British", "Black or Black British", "Mixed", "Other Ethnic Groups"]
+for eth_label in eth_labels:
+  eth_label_clean = eth_label.replace(" ", "_").lower()
+  print(eth_label_clean)
+  stroke_cohort_df[eth_label_clean] = stroke_cohort_df.apply(set_eth_label, args=(eth_label, ), axis=1)
 
 # COMMAND ----------
 
@@ -302,7 +299,7 @@ covid_cohort_py = cohort_py.filter(cohort_py["date"] < cohort_py["covid_infectio
 
 from pyspark.sql.functions import countDistinct, col
 
-covid_events = covid_cohort_py.groupby("NHS_NUMBER_DEID").agg(F.sort_array(F.collect_list(F.struct("date", "code"))).alias("collected_list"),F.max("stroke_hasbled"), F.max("stroke_first_diagnosis"), F.max("date_of_birth"), F.max("date_of_death"), F.max("age_at_cohort_start"), F.max("sex"), F.max("ethnicity"), F.max("region_name"), F.max("imd_decile"), F.max("bmi"), F.max("af_first_diagnosis"), F.max("covid_infection"), F.max("covid_hospitalisation"), F.max("covid_death")).select("*").withColumn("sorted_list",col("collected_list.code")).withColumnRenamed("max(stroke_hasbled)", "stroke").withColumnRenamed("max(stroke_first_diagnosis)", "stroke_first_diagnosis").withColumnRenamed("max(date_of_birth)", "date_of_birth").withColumnRenamed("max(date_of_death)", "date_of_death").withColumnRenamed("max(age_at_cohort_start)", "age_at_cohort_start").withColumnRenamed("max(sex)", "sex").withColumnRenamed("max(ethnicity)", "ethnicity").withColumnRenamed("max(region_name)", "region_name").withColumnRenamed("max(imd_decile)", "imd_decile").withColumnRenamed("max(bmi)", "bmi").withColumnRenamed("max(af_first_diagnosis)", "af_first_diagnosis").withColumnRenamed("max(covid_infection)", "covid_infection").withColumnRenamed("max(covid_hospitalisation)", "covid_hospitalisation").withColumnRenamed("max(covid_death)", "covid_death").withColumnRenamed("sorted_list", "med_hist").drop("collected_list")
+covid_events = covid_cohort_py.groupby("NHS_NUMBER_DEID").agg(F.sort_array(F.collect_list(F.struct("date", "code"))).alias("collected_list"), F.max("is_stroke_first_diagnosis"), F.max("date_of_birth"), F.max("date_of_death"), F.max("age_at_cohort_start"), F.max("sex"), F.max("ethnicity"), F.max("region_name"), F.max("imd_decile"), F.max("bmi"), F.max("af_first_diagnosis"), F.max("covid_infection"), F.max("covid_hospitalisation"), F.max("covid_death")).select("*").withColumn("sorted_list",col("collected_list.code")).withColumnRenamed("max(is_stroke_first_diagnosis)", "stroke_first_diagnosis").withColumnRenamed("max(date_of_birth)", "date_of_birth").withColumnRenamed("max(date_of_death)", "date_of_death").withColumnRenamed("max(age_at_cohort_start)", "age_at_cohort_start").withColumnRenamed("max(sex)", "sex").withColumnRenamed("max(ethnicity)", "ethnicity").withColumnRenamed("max(region_name)", "region_name").withColumnRenamed("max(imd_decile)", "imd_decile").withColumnRenamed("max(bmi)", "bmi").withColumnRenamed("max(af_first_diagnosis)", "af_first_diagnosis").withColumnRenamed("max(covid_infection)", "covid_infection").withColumnRenamed("max(covid_hospitalisation)", "covid_hospitalisation").withColumnRenamed("max(covid_death)", "covid_death").withColumnRenamed("sorted_list", "med_hist").drop("collected_list")
 
 # COMMAND ----------
 
@@ -322,8 +319,8 @@ covid_cohort_df["stroke_first_diagnosis_dt"] = covid_cohort_df["stroke_first_dia
 
 # COMMAND ----------
 
-#convert NaN to 0 in stroke and include strokes after Jan 1st 2020
-covid_cohort_df["stroke"] = covid_cohort_df.apply(correct_stroke_code, axis=1)
+#create binary indicator for stroke
+covid_cohort_df["stroke"] = covid_cohort_df.apply(add_binary_stroke_variable, axis=1)
 
 # COMMAND ----------
 
@@ -387,16 +384,17 @@ covid_cohort_df["covid_death"].mean()
 
 # COMMAND ----------
 
-#process gender and ethnicity variables
+#process gender variables
 covid_cohort_df["female"] = covid_cohort_df["sex"].apply(female_flag)
-covid_cohort_df["sex_name"] = covid_cohort_df["sex"].apply(sex_name_flag)
-covid_cohort_df["white_eth"] = covid_cohort_df.apply(set_white_eth, axis=1)
 
 # COMMAND ----------
 
-#replace Nan in bmi to median bmi
-covid_cohort_df["bmi_imp"] = covid_cohort_df["bmi"].fillna(covid_cohort_df["bmi"].median())
-covid_cohort_df["bmi_imp"] = covid_cohort_df["bmi_imp"].astype(float)
+#set binary variables for ethnicity
+eth_labels = ["White", "Asian or Asian British", "Black or Black British", "Mixed", "Other Ethnic Groups"]
+for eth_label in eth_labels:
+  eth_label_clean = eth_label.replace(" ", "_").lower()
+  print(eth_label_clean)
+  covid_cohort_df[eth_label_clean] = covid_cohort_df.apply(set_eth_label, args=(eth_label, ), axis=1)
 
 # COMMAND ----------
 

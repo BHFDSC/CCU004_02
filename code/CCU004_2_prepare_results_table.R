@@ -37,12 +37,12 @@ create_entry_text = function(metrics) {
 }
 
 #setup loop for scenarios
-outcomes = c("stroke")
-#outcomes = c("covid_death")
-max_lens = c(60,100)
-sample_ratios = c(1,3,"pop")
+#outcomes = c("stroke")
+outcomes = c("covid_death")
+max_lens = c(100)
+sample_ratios = c(1)
 runs = c(1,2,3)
-output_date = "021121"
+output_date = "301121"
 
 comp_table = as.data.frame(matrix(0, ncol = 0, nrow = 6))
 comp_table$model = c("CHA2DS2-VASc >=2","Logistic Regression","LSTM","Random Forest","Transformer","XG Boost")
@@ -58,19 +58,16 @@ for (outcome in outcomes){
       data_1 = dbGetQuery(con,query_1)
       #sort by model name
       data_1 = data_1[order(data_1$model),]
-      #print(data_1)
       
       query_2 = paste('SELECT * FROM dars_nic_391419_j3w9t_collab.ccu004_2_cohort_', outcome, '_seq_len_', max_len, '_sr_', sample_ratio, '_run_', runs[2], '_summary_data_', output_date, sep="")
       data_2 = dbGetQuery(con,query_2)
       #sort by model name
       data_2 = data_2[order(data_2$model),]
-      #print(data_2)
       
       query_3 = paste('SELECT * FROM dars_nic_391419_j3w9t_collab.ccu004_2_cohort_', outcome, '_seq_len_', max_len, '_sr_', sample_ratio, '_run_', runs[3], '_summary_data_', output_date, sep="")
       data_3 = dbGetQuery(con,query_3)
       #sort by model name
       data_3 = data_3[order(data_3$model),]
-      #print(data_3)
       
       #create an individual table with all metrics
       run_data_comb = data.frame()
@@ -119,6 +116,7 @@ for (outcome in outcomes){
   comp_table_filename = paste("summary_data_comparison_", outcome, "_", today_date, ".csv", sep="")
   write.csv(comp_table, comp_table_filename, row.names=F, quote=F)
 }
+
 
 
 
