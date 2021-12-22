@@ -11,8 +11,9 @@ We compare the performance of our DL and ML pipeline directly against the CHA2DS
 The code for our pipeline is generalisable, opensource and designed to provide a proof-of-concept framework that other researchers and developers can build on.
 
 
-## How to cite this work
-> Citation details to follow
+## How to cite this work  
+
+Pre-print available [here](https://www.medrxiv.org/content/10.1101/2021.12.20.21268113v1)
 
 ## Code
 
