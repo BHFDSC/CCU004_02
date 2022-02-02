@@ -8,7 +8,7 @@
 # MAGIC 
 # MAGIC **Reviewer(s)** Chris Tomlinson, Hiu Yan (Samantha) Ip
 # MAGIC  
-# MAGIC **Date last updated** 20-12-2021
+# MAGIC **Date last updated** 24-01-2022
 
 # COMMAND ----------
 
@@ -22,8 +22,8 @@ max_seq_lens = [100]
 sample_ratios = [1]
 runs = [1,2,3]
 
-input_run_date = "301121"
-output_run_date = "301121"
+input_run_date = "240122"
+output_run_date = "240122"
 
 scenarios = len(outcomes) * len(max_seq_lens) * len(sample_ratios) * len(runs)
 

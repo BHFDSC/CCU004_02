@@ -43,7 +43,7 @@ outcomes = c("covid_death")
 max_lens = c(100)
 sample_ratios = c(1)
 runs = c(1,2,3)
-output_date = "301121"
+output_date = "240122"
 
 model_names = c("CHA2DS2-VASc >=2","Logistic Regression","LSTM","Random Forest","Transformer","XG Boost")
 

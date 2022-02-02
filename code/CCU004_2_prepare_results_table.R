@@ -42,7 +42,7 @@ outcomes = c("covid_death")
 max_lens = c(100)
 sample_ratios = c(1)
 runs = c(1,2,3)
-output_date = "301121"
+output_date = "240122"
 
 comp_table = as.data.frame(matrix(0, ncol = 0, nrow = 6))
 comp_table$model = c("CHA2DS2-VASc >=2","Logistic Regression","LSTM","Random Forest","Transformer","XG Boost")

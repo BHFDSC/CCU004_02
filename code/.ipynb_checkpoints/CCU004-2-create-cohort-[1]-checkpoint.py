@@ -8,7 +8,7 @@
 # MAGIC 
 # MAGIC **Reviewer(s)** Chris Tomlinson, Hiu Yan (Samantha) Ip
 # MAGIC  
-# MAGIC **Date last updated** 24-01-2022
+# MAGIC **Date last updated** 20-12-2021
 
 # COMMAND ----------
 
@@ -16,7 +16,7 @@
 
 # COMMAND ----------
 
-run_date = "240122"
+run_date = "301121"
 
 # COMMAND ----------
 
@@ -128,26 +128,7 @@ spark.sql(f"""
 
 # COMMAND ----------
 
-#filter out ethnicity codes
-
-#get ethnicity code table
-eth_table = spark.table("dss_corporate.gdppr_ethnicity_mappings")
-eth_codes = [item.ConceptId for item in eth_table.select('ConceptId').collect()]
-
-af_eval_all = spark.table("global_temp.af_eval_all")
-print("Row count pre ethnicity code filter", af_eval_all.count())
-
-af_eval_cohort_all_eth = af_eval_all.filter(~af_eval_all.code.isin(eth_codes))
-
-print("Row count post ethnicity code filter", af_eval_cohort_all_eth.count())
-
-af_eval_cohort_all_eth_table = "af_eval_all_eth_table"  
-af_eval_cohort_all_eth.createOrReplaceGlobalTempView(af_eval_cohort_all_eth_table)
-
-
-# COMMAND ----------
-
 #save table
-af_eval_all_out = spark.table("global_temp.af_eval_all_eth_table")
+af_eval_all = spark.table("global_temp.af_eval_all")
 export_table_name = "ccu004_2_cohort_all_" + run_date
-create_table_pyspark(af_eval_all_out, export_table_name)
+create_table_pyspark(af_eval_all, export_table_name)

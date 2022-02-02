@@ -8,7 +8,7 @@
 # MAGIC 
 # MAGIC **Reviewer(s)** Chris Tomlinson, Hiu Yan (Samantha) Ip
 # MAGIC  
-# MAGIC **Date last updated** 20-12-2021
+# MAGIC **Date last updated** 24-01-2022
 
 # COMMAND ----------
 
@@ -94,13 +94,13 @@ def set_target_codes(x, target_field, max_len):
 # COMMAND ----------
 
 #set parameters
-run_date = "301121"
+run_date = "240122"
 
 # COMMAND ----------
 
 #load cohort data
 
-cohort_data_table = "dars_nic_391419_j3w9t_collab.ccu004_2_cohort_all_301121"
+cohort_data_table = "dars_nic_391419_j3w9t_collab.ccu004_2_cohort_all_240122"
 cohort_py = spark.table(cohort_data_table)
 
 # COMMAND ----------

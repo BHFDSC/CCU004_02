@@ -11,14 +11,13 @@ library(data.table)
 library(DBI)
 
 today_date = format(Sys.time(), "%d_%m_%Y")
-#today_date = "30_11_2021"
 
 # connect to databricks instance
 con = dbConnect( odbc::odbc(), "Databricks", timeout = 60, 
                  PWD=rstudioapi::askForPassword("Please enter your Databricks personal access token"))
 
 outcomes = c("stroke", "covid_death")
-input_run_date = "301121"
+input_run_date = "240122"
 
 for (outcome in outcomes){
   query = paste('SELECT * FROM dars_nic_391419_j3w9t_collab.ccu004_2_cohort_', outcome, '_seq_len_all_', input_run_date, sep="")
